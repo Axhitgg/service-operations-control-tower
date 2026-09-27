@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: service_ops_db
+      POSTGRES_USER: service_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U service_user -d service_ops_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "5090:5090"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      DATABASE_URL: postgresql://service_user:${POSTGRES_PASSWORD}@db:5432/service_ops_db
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

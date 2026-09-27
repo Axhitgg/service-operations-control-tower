@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS service_cases (
+    id SERIAL PRIMARY KEY,
+    case_id TEXT UNIQUE NOT NULL,
+    customer_name TEXT NOT NULL,
+    customer_email TEXT NOT NULL,
+    vehicle_make TEXT NOT NULL,
+    vehicle_model TEXT NOT NULL,
+    vehicle_year INTEGER,
+    vin TEXT,
+    symptom_description TEXT NOT NULL,
+    issue_category TEXT NOT NULL,
+    affected_system TEXT NOT NULL,
+    urgency TEXT NOT NULL,
+    ai_summary TEXT NOT NULL,
+    technician_skill TEXT NOT NULL,
+    required_parts JSONB NOT NULL,
+    warranty_active BOOLEAN,
+    warranty_status TEXT NOT NULL,
+    requires_human_review BOOLEAN NOT NULL,
+    status TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

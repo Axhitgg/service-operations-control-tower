@@ -1,0 +1,4 @@
+ai-automation-venv/
+__pycache__/
+.env
+*.pyc
