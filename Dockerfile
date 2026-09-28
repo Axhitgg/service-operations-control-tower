@@ -10,4 +10,4 @@ COPY init.sql .
 
 EXPOSE 5090
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5090} service_api:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5090} --access-logfile - --error-logfile - service_api:app"]
