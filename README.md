@@ -29,7 +29,7 @@ Customer / n8n intake -> Flask validation + duplicate-ID check -> OpenAI classif
                      -> Technician / inventory lookup -> Appointment proposal
 ```
 
-The API enforces review status before downstream resource matching and appointment proposals; n8n should also branch on the returned status. This repository contains the API, database schema, tests, Docker configuration and CI; an importable n8n workflow is not included.
+The API enforces review status before downstream resource matching and appointment proposals; n8n is orchestration rather than the source of authorisation. This repository contains the API, database schema, tests, Docker configuration, CI and a sanitised inactive n8n JSON export. The export must be configured with an uncommitted credential and verified in a clean n8n instance before activation.
 
 ## Evidence and learning pack
 
@@ -37,6 +37,7 @@ The API enforces review status before downstream resource matching and appointme
 - [Three executable demonstration scenarios](docs/DEMO_SCENARIOS.md)
 - [Owner learning and interview guide](docs/LEARNING_GUIDE.md)
 - [Public demo boundaries](docs/PUBLIC_DEMO_BOUNDARIES.md)
+- [Sanitised n8n workflow and setup](workflows/README.md)
 
 The evidence pack documents verified behavior and limitations. It does not add customer metrics, claim a production deployment or turn the illustrative portfolio walkthrough into the backend.
 
