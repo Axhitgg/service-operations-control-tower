@@ -31,6 +31,15 @@ Customer / n8n intake -> Flask validation + duplicate-ID check -> OpenAI classif
 
 The API enforces review status before downstream resource matching and appointment proposals; n8n should also branch on the returned status. This repository contains the API, database schema, tests, Docker configuration and CI; an importable n8n workflow is not included.
 
+## Evidence and learning pack
+
+- [Case study and architecture](docs/CASE_STUDY.md)
+- [Three executable demonstration scenarios](docs/DEMO_SCENARIOS.md)
+- [Owner learning and interview guide](docs/LEARNING_GUIDE.md)
+- [Public demo boundaries](docs/PUBLIC_DEMO_BOUNDARIES.md)
+
+The evidence pack documents verified behavior and limitations. It does not add customer metrics, claim a production deployment or turn the illustrative portfolio walkthrough into the backend.
+
 ## What is implemented
 
 - Required intake fields, normalised customer email, API-key checks and case-ID duplicate detection.
