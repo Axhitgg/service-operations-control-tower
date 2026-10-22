@@ -1,0 +1,317 @@
+{
+  "name": "Service Operations Control Tower - API orchestration",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "control-tower-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "079848d3-d014-43e0-b85d-e25115598876",
+      "name": "Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        -260
+      ],
+      "webhookId": "413158c6-48a7-4165-ab74-9ab91a87feaa"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-RENDER-SERVICE.onrender.com/service-cases",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "REPLACE_AFTER_IMPORT"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "0729e3f7-aec8-49e8-a36e-d69ec5cf39ba",
+      "name": "Create Service Case",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -360,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "2010eb5f-c014-4f1a-af21-0a92d784cb51",
+      "name": "Return Intake Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -100,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "control-tower-decision/:case_id",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5135fc2c-6220-4407-95bf-ee8dba9a29d3",
+      "name": "Decision Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        20
+      ],
+      "webhookId": "7838f5df-c0eb-4f37-ac07-e0f7686c552f"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://YOUR-RENDER-SERVICE.onrender.com/service-cases/{{ $json.params.case_id }}/approval",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "REPLACE_AFTER_IMPORT"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "862742d8-3a31-451a-95d7-c89d21058a87",
+      "name": "Record Review Decision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -360,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "0bbbca8c-fc41-4af1-91ce-e2012ed0c97c",
+      "name": "Return Decision Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -100,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "control-tower-continue/:case_id",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "98241fb5-b0e3-47e0-a2bd-c13d4a3b1ed5",
+      "name": "Continue Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        300
+      ],
+      "webhookId": "a036ac80-bdbc-4ac7-b8e8-bb775cb3da1a"
+    },
+    {
+      "parameters": {
+        "url": "=https://YOUR-RENDER-SERVICE.onrender.com/service-cases/{{ $json.params.case_id }}/resources",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "REPLACE_AFTER_IMPORT"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "49e32922-a807-41bb-ac18-5429d15111e0",
+      "name": "Match Current Resources",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -360,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://YOUR-RENDER-SERVICE.onrender.com/service-cases/{{ $('Continue Webhook').item.json.params.case_id }}/appointment",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "REPLACE_AFTER_IMPORT"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "3b337534-cd31-421d-855f-484a9b7fd179",
+      "name": "Propose Appointment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "ca72b2b7-d85c-46e1-962e-b48746414e77",
+      "name": "Return Continuation Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        160,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create Service Case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Service Case": {
+      "main": [
+        [
+          {
+            "node": "Return Intake Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Webhook": {
+      "main": [
+        [
+          {
+            "node": "Record Review Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Review Decision": {
+      "main": [
+        [
+          {
+            "node": "Return Decision Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Webhook": {
+      "main": [
+        [
+          {
+            "node": "Match Current Resources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Current Resources": {
+      "main": [
+        [
+          {
+            "node": "Propose Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propose Appointment": {
+      "main": [
+        [
+          {
+            "node": "Return Continuation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "tags": []
+}
+
