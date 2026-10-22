@@ -35,3 +35,31 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t service-operations-control-tower .
+
+  database-approval:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: ct_approval_test
+          POSTGRES_USER: ct_test
+          POSTGRES_PASSWORD: test-only-approval-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ct_test -d ct_approval_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pytest
+      - name: Test approval, resource gates and concurrent actions against PostgreSQL
+        env:
+          CONTROL_TOWER_TEST_DATABASE_URL: postgresql://ct_test:test-only-approval-password@127.0.0.1:5432/ct_approval_test
+        run: python -m pytest -q test_database_approval.py
