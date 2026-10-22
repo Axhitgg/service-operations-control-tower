@@ -176,3 +176,32 @@ def test_sql_concurrent_proposals_create_one_row(monkeypatch, database):
         results = [f.result(timeout=15) for f in futures]
     assert sum(bool(r.get("duplicate")) for r in results) == 1
     assert scalar(database, "SELECT COUNT(*) FROM appointments") == 1
+
+
+def test_sql_concurrent_intake_creates_one_case(monkeypatch, database):
+    monkeypatch.setattr(service_api, "classify_case", lambda *args: {
+        "issue_category": "Infotainment",
+        "affected_system": "Display",
+        "urgency": "Low",
+        "summary": "Synthetic concurrent intake",
+        "technician_skill": "Infotainment technician",
+        "required_parts": []
+    })
+    payload = valid_payload()
+    payload["case_id"] = "concurrent-intake-" + uuid.uuid4().hex
+    start = Barrier(2)
+
+    def submit():
+        start.wait(timeout=10)
+        response = service_api.app.test_client().post(
+            "/service-cases", json=payload, headers={"X-API-Key": API_KEY}
+        )
+        assert response.status_code == 200
+        return response.get_json()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(submit), executor.submit(submit)]
+        results = [future.result(timeout=15) for future in futures]
+
+    assert sum(bool(result.get("duplicate")) for result in results) == 1
+    assert scalar(database, "SELECT COUNT(*) FROM service_cases") == 1

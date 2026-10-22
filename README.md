@@ -145,7 +145,7 @@ The default suite contains **51 parametrized test cases**, including the origina
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt pytest
-OPENAI_API_KEY=test-placeholder python -m pytest -q test_service_api.py
+OPENAI_API_KEY=test-placeholder python -m pytest -q test_service_api.py test_evaluation.py
 ```
 
 An additional **13 opt-in PostgreSQL integration cases** exercise real SQL with synthetic fixtures: pending/rejected blocks, approved and routine workflows, changed stock/technician availability, audit-failure rollback, concurrent conflicting decisions and duplicate concurrent proposals. AI classification is mocked; no paid API call or customer dataset is used. Each test creates and removes only its own random schema in a dedicated test database.
@@ -167,8 +167,11 @@ The runner creates a separate temporary cluster with TCP listening disabled, run
 - State checks enforce the recorded approval decision, not the correctness of AI triage or an actual safety assessment. A dangerous message misclassified as Low/Medium can still follow the routine path.
 - A shared API key is not role-based access control. The reviewer name is supplied by the caller, not verified against a user account.
 - Technician matching uses word overlap; parts matching uses partial text. Neither validates real certification, geography, inventory reservations or calendar availability.
-- Appointment proposals use a fixed future offset. SLA deadlines are recorded, not enforced by a scheduling optimiser; some proposed times can fall after the recorded deadline.
-- Duplicate checks are not full concurrent idempotency, and there is no durable retry queue or email-delivery ledger.
+- AI calls use a bounded timeout and retry count configured by `MODEL_TIMEOUT_SECONDS` and `MODEL_MAX_RETRIES`.
+- Every response includes `X-Request-ID`; a valid caller ID is preserved and an unsafe or missing value is replaced. Classification-failure logs record that ID and the exception type, not symptom text or customer details.
+- Appointment starts are proposed within the urgency response window (Critical 30 minutes, High 2 hours, Medium 8 hours, Low 24 hours). This is a prototype scheduling rule, not a real calendar reservation.
+- Appointment proposals use fixed urgency-based offsets within the recorded response window. They are not produced by a real scheduling optimiser and do not reserve a calendar slot.
+- The unique case ID prevents duplicate rows during concurrent intake, but simultaneous retries can still repeat classification work. There is no durable retry queue or email-delivery ledger.
 - Readiness verifies database connectivity, not the complete schema.
 - Customer symptom text is sent to OpenAI. Do not submit real client details or credentials to the public demo. Keep secrets in environment variables and use unique keys instead of test fixtures.
 
