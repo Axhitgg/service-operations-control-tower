@@ -1,7 +1,8 @@
-from flask import Flask, request, jsonify
+from flask import Flask, g, request, jsonify
 from openai import OpenAI
 import psycopg
 import json
+import logging
 import os
 import re
 import uuid
@@ -14,10 +15,31 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "dbname=service_ops_db"
 )
+MODEL_TIMEOUT_SECONDS = float(os.environ.get("MODEL_TIMEOUT_SECONDS", "15"))
+MODEL_MAX_RETRIES = int(os.environ.get("MODEL_MAX_RETRIES", "2"))
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("service_operations_control_tower")
+
+
+@app.before_request
+def assign_request_id():
+    supplied = request.headers.get("X-Request-ID", "")
+    g.request_id = supplied if REQUEST_ID_PATTERN.fullmatch(supplied) else uuid.uuid4().hex
+
+
+@app.after_request
+def include_request_id(response):
+    response.headers["X-Request-ID"] = g.request_id
+    return response
 
 
 def classify_case(symptom_description, warranty_active):
-    client = OpenAI()
+    client = OpenAI(
+        timeout=MODEL_TIMEOUT_SECONDS,
+        max_retries=MODEL_MAX_RETRIES
+    )
 
     response = client.responses.create(
         model="gpt-5-mini",
@@ -101,6 +123,7 @@ def save_case(case):
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
+                ON CONFLICT (case_id) DO NOTHING
                 RETURNING id
                 """,
                 (
@@ -127,7 +150,10 @@ def save_case(case):
                 )
             )
 
-            database_id = cursor.fetchone()[0]
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            database_id = row[0]
             connection.commit()
             return database_id
 
@@ -204,7 +230,12 @@ def ready():
             "database": "ok"
         }), 200
 
-    except Exception:
+    except Exception as error:
+        logger.warning(
+            "readiness_failed request_id=%s error_type=%s",
+            g.request_id,
+            type(error).__name__
+        )
         return jsonify({
             "status": "not_ready",
             "database": "unavailable"
@@ -269,7 +300,13 @@ def receive_service_case():
             warranty_active
         )
 
-    except Exception:
+    except Exception as error:
+        logger.warning(
+            "classification_failed request_id=%s case_id=%s error_type=%s",
+            g.request_id,
+            case_id,
+            type(error).__name__
+        )
         return jsonify({
             "received": False,
             "status": "human_review",
@@ -321,6 +358,14 @@ def receive_service_case():
     }
 
     database_id = save_case(case)
+
+    if database_id is None:
+        return jsonify({
+            "received": False,
+            "duplicate": True,
+            "case_id": case_id,
+            "message": "This service case was already processed"
+        }), 200
 
     return jsonify({
         "received": True,
@@ -646,7 +691,14 @@ def propose_appointment(case_id):
                 "Low": 72
             }.get(urgency, 24)
 
-            proposed_start = now + timedelta(hours=2)
+            lead_minutes = {
+                "Critical": 30,
+                "High": 120,
+                "Medium": 480,
+                "Low": 1440
+            }[urgency]
+
+            proposed_start = now + timedelta(minutes=lead_minutes)
             proposed_end = proposed_start + timedelta(hours=1)
             sla_due_at = now + timedelta(hours=sla_hours)
 

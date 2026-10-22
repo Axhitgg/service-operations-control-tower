@@ -204,6 +204,92 @@ def test_ai_failure_routes_to_human_review(monkeypatch):
     assert body["received"] is False
 
 
+def test_request_id_is_preserved_when_valid(monkeypatch):
+    configure_api(monkeypatch)
+    response = service_api.app.test_client().get(
+        "/health", headers={"X-Request-ID": "job-123.retry-2"}
+    )
+    assert response.headers["X-Request-ID"] == "job-123.retry-2"
+
+
+def test_invalid_request_id_is_replaced(monkeypatch):
+    configure_api(monkeypatch)
+    response = service_api.app.test_client().get(
+        "/health", headers={"X-Request-ID": "unsafe id with spaces"}
+    )
+    replacement = response.headers["X-Request-ID"]
+    assert replacement != "unsafe id with spaces"
+    assert service_api.REQUEST_ID_PATTERN.fullmatch(replacement)
+
+
+def test_readiness_failure_returns_503_with_request_id(monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("Synthetic database outage")
+
+    monkeypatch.setattr(service_api.psycopg, "connect", unavailable)
+    response = service_api.app.test_client().get(
+        "/ready", headers={"X-Request-ID": "ready-check-1"}
+    )
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "status": "not_ready", "database": "unavailable"
+    }
+    assert response.headers["X-Request-ID"] == "ready-check-1"
+
+
+def test_classifier_uses_bounded_client_settings(monkeypatch):
+    captured = {}
+
+    class Response:
+        output_text = (
+            '{"issue_category":"Display","affected_system":"Screen",'
+            '"urgency":"Low","summary":"Synthetic",'
+            '"technician_skill":"Display technician","required_parts":[]}'
+        )
+
+    class Responses:
+        @staticmethod
+        def create(**kwargs):
+            return Response()
+
+    class Client:
+        responses = Responses()
+
+    def client_factory(**kwargs):
+        captured.update(kwargs)
+        return Client()
+
+    monkeypatch.setattr(service_api, "OpenAI", client_factory)
+    result = service_api.classify_case("Synthetic symptom", False)
+    assert result["urgency"] == "Low"
+    assert captured == {
+        "timeout": service_api.MODEL_TIMEOUT_SECONDS,
+        "max_retries": service_api.MODEL_MAX_RETRIES
+    }
+
+
+def test_insert_race_returns_duplicate_without_error(monkeypatch):
+    configure_api(monkeypatch)
+    monkeypatch.setattr(service_api, "case_already_exists", lambda case_id: False)
+    monkeypatch.setattr(service_api, "classify_case", lambda *args: {
+        "issue_category": "Infotainment",
+        "affected_system": "Display",
+        "urgency": "Low",
+        "summary": "Synthetic duplicate-race case",
+        "technician_skill": "Infotainment technician",
+        "required_parts": []
+    })
+    monkeypatch.setattr(service_api, "save_case", lambda case: None)
+
+    response = service_api.app.test_client().post(
+        "/service-cases",
+        json=valid_payload(),
+        headers={"X-API-Key": API_KEY}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["duplicate"] is True
+
+
 class ScriptedDatabase:
     """Record SQL and return explicit fixtures; never contact a database."""
 
@@ -339,6 +425,35 @@ def test_actionable_cases_propose_appointment(monkeypatch, status, urgency, warr
     assert any("availability_status = 'available'" in q for q, _ in database.queries)
     assert any("parts_inventory" in q and "FOR SHARE" in q
                for q, _ in database.queries)
+
+
+@pytest.mark.parametrize("urgency,expected_slack_minutes", [
+    ("Critical", 30),
+    ("High", 120),
+    ("Medium", 960),
+    ("Low", 2880),
+])
+def test_appointment_start_respects_urgency_window(
+        monkeypatch, urgency, expected_slack_minutes):
+    status = "approved" if urgency in {"High", "Critical"} else "classified"
+    warranty_status = "approved" if status == "approved" else "not_eligible"
+    database = use_database(monkeypatch, [
+        (2, True, urgency, status, False, False, warranty_status, []),
+        (2, "Demo Technician", "Demo"),
+        (101,)
+    ])
+    response = downstream_request("appointment")
+    insert_params = next(
+        params for query, params in database.queries
+        if "INSERT INTO appointments" in query
+    )
+    proposed_start = insert_params[2]
+    sla_due_at = insert_params[4]
+    assert response.status_code == 200
+    assert proposed_start <= sla_due_at
+    assert sla_due_at - proposed_start == service_api.timedelta(
+        minutes=expected_slack_minutes
+    )
 
 
 @pytest.mark.parametrize("technician,parts", [(None, True), (2, False)])

@@ -31,7 +31,7 @@ jobs:
         env:
           OPENAI_API_KEY: test-key
           SERVICE_API_KEY: control-tower-demo-key-2026
-        run: python -m pytest -q test_service_api.py
+        run: python -m pytest -q test_service_api.py test_evaluation.py
 
       - name: Build Docker image
         run: docker build -t service-operations-control-tower .
