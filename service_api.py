@@ -132,6 +132,61 @@ def save_case(case):
             return database_id
 
 
+def case_action_blocker(status, review_pending, urgency, warranty_active,
+                        warranty_status):
+    """Fail closed before matching resources or proposing an appointment."""
+    if status == "rejected" or warranty_status == "rejected":
+        return "rejected", "Rejected service cases cannot proceed"
+
+    if status == "awaiting_review" or review_pending is not False:
+        return "awaiting_review", "Human approval is required before proceeding"
+
+    if status not in {"classified", "approved"}:
+        return "state_conflict", "Service case is not in an actionable state"
+
+    if urgency not in {"Low", "Medium", "High", "Critical"}:
+        return "state_conflict", "Service case has an invalid urgency"
+
+    risk_requires_approval = (
+        urgency in {"High", "Critical"} or warranty_active is True
+    )
+    if risk_requires_approval and status != "approved":
+        return "awaiting_review", "Human approval is required before proceeding"
+
+    return None
+
+
+def find_required_parts(cursor, required_parts, lock=False):
+    """Check inventory without claiming to reserve it."""
+    matched_parts = []
+    all_parts_available = True
+    for requested_part in required_parts:
+        query = """
+            SELECT part_name, stock_quantity, warehouse_location
+            FROM parts_inventory
+            WHERE LOWER(part_name) LIKE LOWER(%s)
+            LIMIT 1
+        """
+        if lock:
+            query += " FOR SHARE"
+        cursor.execute(query, (f"%{requested_part[:20]}%",))
+        part_row = cursor.fetchone()
+        if part_row is None or part_row[1] <= 0:
+            all_parts_available = False
+            matched_parts.append({
+                "requested_part": requested_part,
+                "available": False
+            })
+        else:
+            matched_parts.append({
+                "requested_part": requested_part,
+                "available": True,
+                "stock_quantity": part_row[1],
+                "warehouse_location": part_row[2]
+            })
+    return matched_parts, all_parts_available
+
+
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"}), 200
@@ -300,9 +355,10 @@ def approve_service_case(case_id):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT requires_human_review
+                SELECT requires_human_review, status
                 FROM service_cases
                 WHERE case_id = %s
+                FOR UPDATE
                 """,
                 (case_id,)
             )
@@ -315,10 +371,11 @@ def approve_service_case(case_id):
                     "error": "Service case not found"
                 }), 404
 
-            if not row[0]:
+            if row[0] is not True or row[1] != "awaiting_review":
                 return jsonify({
                     "received": False,
-                    "error": "This case does not require human review"
+                    "status": "state_conflict",
+                    "error": "Only a case awaiting human review can be decided"
                 }), 409
 
             new_status = (
@@ -387,9 +444,12 @@ def match_case_resources(case_id):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT technician_skill, required_parts
+                SELECT technician_skill, required_parts, status,
+                       requires_human_review, urgency, warranty_active,
+                       warranty_status
                 FROM service_cases
                 WHERE case_id = %s
+                FOR UPDATE
                 """,
                 (case_id,)
             )
@@ -401,6 +461,15 @@ def match_case_resources(case_id):
                     "received": False,
                     "error": "Service case not found"
                 }), 404
+
+            blocker = case_action_blocker(*case_row[2:])
+            if blocker:
+                return jsonify({
+                    "received": False,
+                    "case_id": case_id,
+                    "status": blocker[0],
+                    "error": blocker[1]
+                }), 409
 
             required_skill = case_row[0].lower()
             required_parts = case_row[1] or []
@@ -436,35 +505,9 @@ def match_case_resources(case_id):
                 if score >= 2 and score > best_score:
                     best_score = score
                     best_technician = technician
-            matched_parts = []
-            all_parts_available = True
-        
-            for requested_part in required_parts:
-                cursor.execute(
-                    """
-                    SELECT part_name, stock_quantity, warehouse_location
-                    FROM parts_inventory
-                    WHERE LOWER(part_name) LIKE LOWER(%s)
-                    LIMIT 1
-                    """,
-                    (f"%{requested_part[:20]}%",)
-                )
-        
-                part_row = cursor.fetchone()
-        
-                if part_row is None or part_row[1] <= 0:
-                    all_parts_available = False
-                    matched_parts.append({
-                        "requested_part": requested_part,
-                        "available": False
-                    })
-                else:
-                    matched_parts.append({
-                        "requested_part": requested_part,
-                        "available": True,
-                        "stock_quantity": part_row[1],
-                        "warehouse_location": part_row[2]
-                    })
+            matched_parts, all_parts_available = find_required_parts(
+                cursor, required_parts
+            )
         
             technician_result = None
         
@@ -526,9 +569,12 @@ def propose_appointment(case_id):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT matched_technician_id, parts_available, urgency
+                SELECT matched_technician_id, parts_available, urgency,
+                       status, requires_human_review, warranty_active,
+                       warranty_status, required_parts
                 FROM service_cases
                 WHERE case_id = %s
+                FOR UPDATE
                 """,
                 (case_id,)
             )
@@ -541,7 +587,19 @@ def propose_appointment(case_id):
                     "error": "Service case not found"
                 }), 404
 
-            technician_id, parts_available, urgency = case_row
+            (technician_id, parts_available, urgency, status, review_pending,
+             warranty_active, warranty_status, required_parts) = case_row
+
+            blocker = case_action_blocker(
+                status, review_pending, urgency, warranty_active, warranty_status
+            )
+            if blocker:
+                return jsonify({
+                    "received": False,
+                    "case_id": case_id,
+                    "status": blocker[0],
+                    "error": blocker[1]
+                }), 409
 
             if not technician_id or not parts_available:
                 return jsonify({
@@ -554,12 +612,30 @@ def propose_appointment(case_id):
                 """
                 SELECT id, name, location
                 FROM technicians
-                WHERE id = %s
+                WHERE id = %s AND availability_status = 'available'
+                FOR SHARE
                 """,
                 (technician_id,)
             )
 
             technician = cursor.fetchone()
+
+            if technician is None:
+                return jsonify({
+                    "received": False,
+                    "status": "resource_review",
+                    "error": "Matched technician is no longer available"
+                }), 409
+
+            _, current_parts_available = find_required_parts(
+                cursor, required_parts or [], lock=True
+            )
+            if not current_parts_available:
+                return jsonify({
+                    "received": False,
+                    "status": "resource_review",
+                    "error": "Required parts are no longer available"
+                }), 409
 
             now = datetime.now(timezone.utc)
 
