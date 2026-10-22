@@ -44,5 +44,7 @@ POST to `/control-tower-continue/{case_id}` with an empty JSON object. The workf
 
 ## Verification boundary
 
-The JSON is syntax-checked in this repository. Import and node execution in a clean n8n instance remain required before claiming the workflow is fully import-verified. Do not publish or activate it until that check is complete.
+The JSON was syntax-checked and successfully imported into an isolated, clean n8n 2.44.5 user folder on 23 October 2026. A clean re-export confirmed that the workflow remained inactive, contained 10 nodes, and contained no credential objects or pinned data.
+
+This verifies export structure and clean importability only. The nodes have not been activated or executed against the live Render API. Before publishing, configure a separate n8n credential, use fictional payloads, and test every blocked and allowed path described above.
 
