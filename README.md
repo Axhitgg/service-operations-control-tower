@@ -35,6 +35,7 @@ The API enforces review status before downstream resource matching and appointme
 
 - [Case study and architecture](docs/CASE_STUDY.md)
 - [Three executable demonstration scenarios](docs/DEMO_SCENARIOS.md)
+- [Two-minute caption-ready demo transcript](docs/DEMO_TRANSCRIPT.md)
 - [Owner learning and interview guide](docs/LEARNING_GUIDE.md)
 - [Public demo boundaries](docs/PUBLIC_DEMO_BOUNDARIES.md)
 - [Synthetic triage evaluation](evaluation/README.md)
